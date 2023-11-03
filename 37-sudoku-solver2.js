@@ -12,17 +12,22 @@ var solveSudoku = function (board) {
             positions[i][j] = new Position(i, j, num);
         }
     }
-    printBoard(positions);
+
     let done = false;
     let i = 0;
-    while (!done && i++ < 100) {
+    while (!done && i++ < 1000) {
         done = updateSudoku(positions);
         printBoard(positions);
     }
-
-    checkXWing(positions);
+    printBoard(positions);
+    for (let i = 0; i < positions.length; i++) {
+        for (let j = 0; j < positions[i].length; j++) {
+            board[i][j] = positions[i][j].num;
+        }
+    }
     return board;
 };
+
 class Position {
     i = 0;
     j = 0;
@@ -43,42 +48,70 @@ const squareEnds = [2, 5, 8];
 const updateSudoku = (positions) => {
     let done = true;
     let changed = false;
-    positions.forEach((row, i) => {
-        row.forEach((position, j) => {
+    let columns = [[], [], [], [], [], [], [], [], []];
+
+    for (let i = 0; i < positions.length; i++) {
+        const row = positions[i];
+
+        for (let j = 0; j < row.length; j++) {
+            const position = row[j];
+            columns[j].push(position);
             if (!position.solved) {
                 done = false;
-                position.possibleNums = getPossibleNums(positions, position.i, position.j);
-                if (position.possibleNums.length === 1) {
-                    console.log('found', i, j, position.possibleNums[0]);
+                const nextPossibleNums = getPossibleNums(positions, position.i, position.j);
+                if (!position.possibleNums.length || nextPossibleNums.length < position.possibleNums.length) {
+                    position.possibleNums = nextPossibleNums;
                     changed = true;
-                    position.num = position.possibleNums[0];
-                    position.solved = true;
                 }
+                if (nextPossibleNums.length === 1) {
+                    changed = true;
+                    position.num = nextPossibleNums[0];
+                    position.solved = true;
+                    console.log('solved', position);
+                }
+            } else if (!position.possibleNums.length) {
+                position.possibleNums = [position.num];
             }
             if (squareEnds.includes(j) && squareEnds.includes(i)) {
                 const squarePositions = getSquarePositions(positions, i, j);
                 const found = checkPostions(squarePositions);
                 if (found.length) {
-                    console.log('logic found', i, j);
+                    console.log('square found', found);
                     changed = true;
+                    return false;
                 }
             }
-        });
+        }
         const rowLogic = checkPostions(row);
         if (rowLogic.length) {
-            console.log('row logic found', rowLogic);
+            console.log('rowLogic found', rowLogic);
             changed = true;
+            return false;
         }
-    });
+    }
+    for (let i = 0; i < columns.length; i++) {
+        const column = columns[i];
+        const columnLogic = checkPostions(column);
+        if (columnLogic.length) {
+            console.log('columnLogic found', columnLogic);
+            changed = true;
+            break;
+        }
+    }
+
+    checkXWing(positions);
+
     return changed ? done : true;
 };
 
 //had to google this sudoku solving technique
 const checkXWing = (positions) => {
     const allRows = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [], 8: [], 9: [] };
-    positions.forEach((row, i) => {
+    // iterate through each row of board
+    positions.forEach((row) => {
         const rowDict = {};
-        row.forEach((pos, j) => {
+        //iterate through each position in row
+        row.forEach((pos) => {
             if (pos.solved) {
                 rowDict[pos.num] = 'done';
             }
@@ -86,17 +119,65 @@ const checkXWing = (positions) => {
                 if (rowDict[num] === 'done') {
                     return;
                 } else {
-                    rowDict[num] ? rowDict[num].push(pos.j) : (rowDict[num] = [pos.j]);
+                    rowDict[num]
+                        ? rowDict[num].push({ i: pos.i, j: pos.j })
+                        : (rowDict[num] = [{ i: pos.i, j: pos.j }]);
                 }
             });
         });
         for (const [key, value] of Object.entries(rowDict)) {
             if (value !== 'done') {
-                allRows[key].push(value.join(''));
+                allRows[key].push(value);
             }
         }
     });
-    return allRows;
+
+    return findSwordfish(positions, allRows);
+};
+
+// TODO: only works for rows, should work for columns too
+const findSwordfish = (postions, input) => {
+    //iterate numbers
+    let changed = false;
+    for (const [key, value] of Object.entries(input)) {
+        const filtered = value.filter((num) => num.length < 4 && num.length > 1);
+        // iterate through each row possiblities
+        for (let i = 0; i < filtered.length; i++) {
+            const element = filtered[i].map((pos) => pos.j);
+            const elementSet = new Set(element);
+            let rows = [filtered[i][0].i];
+            let possibleSet;
+            // compare position possibilities to other rows
+            for (let j = 0; j < filtered.length; j++) {
+                if (i === j) continue;
+                let clonedSet = new Set(elementSet);
+                const element2 = filtered[j].map((pos) => pos.j);
+                element2.forEach(clonedSet.add, clonedSet);
+                if (clonedSet.size < 4) {
+                    rows.push(filtered[j][0].i);
+                    if (rows.length === 3) {
+                        possibleSet = clonedSet;
+                    }
+                }
+            }
+            if (rows.length == 3) {
+                changed = true;
+                // iterate rows
+                for (let k = 0; k < postions.length; k++) {
+                    const row = postions[k];
+                    if (rows.includes(k)) continue;
+                    // iterate poistions in row
+                    for (let l = 0; l < row.length; l++) {
+                        if (possibleSet.has(l) && row[l].possibleNums.includes(key)) {
+                            row[l].possibleNums = row[l].possibleNums.filter((num) => num !== key);
+                        }
+                    }
+                }
+                break;
+            }
+        }
+    }
+    return changed;
 };
 
 const getPossibleNums = (positions, row, col) => {
@@ -212,6 +293,30 @@ const input2 = [
     ['.', '.', '.', '2', '7', '5', '9', '.', '.'],
 ];
 
+const input3 = [
+    ['.', '.', '.', '2', '.', '.', '.', '6', '3'],
+    ['3', '.', '.', '.', '.', '5', '4', '.', '1'],
+    ['.', '.', '1', '.', '.', '3', '9', '8', '.'],
+    ['.', '.', '.', '.', '.', '.', '.', '9', '.'],
+    ['.', '.', '.', '5', '3', '8', '.', '.', '.'],
+    ['.', '3', '.', '.', '.', '.', '.', '.', '.'],
+    ['.', '2', '6', '3', '.', '.', '5', '.', '.'],
+    ['5', '.', '3', '7', '.', '.', '.', '.', '8'],
+    ['4', '7', '.', '.', '.', '1', '.', '.', '.'],
+];
+
+const input4 = [
+    ['1', '.', '.', '.', '7', '.', '.', '3', '.'],
+    ['8', '3', '.', '6', '.', '.', '.', '.', '.'],
+    ['.', '.', '2', '9', '.', '.', '6', '.', '8'],
+    ['6', '.', '.', '.', '.', '4', '9', '.', '7'],
+    ['.', '9', '.', '.', '.', '.', '.', '5', '.'],
+    ['3', '.', '7', '5', '.', '.', '.', '.', '4'],
+    ['2', '.', '3', '.', '.', '9', '1', '.', '.'],
+    ['.', '.', '.', '.', '.', '2', '.', '4', '3'],
+    ['.', '4', '.', '.', '8', '.', '.', '.', '9'],
+];
 // The performance could definitely be improved.
-solveSudoku(input2);
+solveSudoku(input4);
+// console.log(solveSudoku(input3));
 // console.log(solveSudoku(input2));
